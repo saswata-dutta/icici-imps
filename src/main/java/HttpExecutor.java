@@ -9,12 +9,19 @@ import okhttp3.Response;
 import java.io.IOException;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
 @UtilityClass
 public class HttpExecutor {
   private static OkHttpClient client;
+  private static ExecutorService threadExecutor;
+  private static final int TTL = 1;
 
   static {
     client =
@@ -24,9 +31,11 @@ public class HttpExecutor {
             .readTimeout(30, TimeUnit.SECONDS)
             .retryOnConnectionFailure(false)
             .build();
+
+    threadExecutor = Executors.newSingleThreadExecutor();
   }
 
-  public Optional<String> apply(String baseUrl, Map<String, String> params) throws IOException {
+  public static Optional<String> apply(String baseUrl, Map<String, String> params) {
 
     String bodyStr =
         params.entrySet().stream()
@@ -41,13 +50,38 @@ public class HttpExecutor {
             .url(baseUrl)
             .post(body)
             .build();
-
-    try (Response response = client.newCall(request).execute()) {
-      if (response == null || !response.isSuccessful()) {
-        return Optional.empty();
-      }
-      return Optional.ofNullable(consumeResponse(response));
+    System.out.println("Fork Init Request ...");
+    Future<Optional<String>> asyncResponse = threadExecutor.submit(() -> execute(request));
+    try {
+      return asyncResponse.get(TTL, TimeUnit.MINUTES);
+    } catch (TimeoutException e) {
+      System.err.println("Timed out Sending Request");
+      e.printStackTrace();
+    } catch (ExecutionException e) {
+      System.err.println("Error Sending Request");
+      e.printStackTrace();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      System.err.println("Thread Interrupted");
+      e.printStackTrace();
     }
+    // stop the pending request
+    client.dispatcher().cancelAll();
+    asyncResponse.cancel(true);
+    return Optional.empty();
+  }
+
+  private static Optional<String> execute(Request request) {
+    System.out.println("Init Request ...");
+    try (Response response = client.newCall(request).execute()) {
+      System.out.println("Receive Response ...");
+      if (response != null && response.isSuccessful()) {
+        return Optional.ofNullable(consumeResponse(response));
+      }
+    } catch (IOException e) {
+      e.printStackTrace();
+    }
+    return Optional.empty();
   }
 
   private static String consumeResponse(@NonNull Response response) throws IOException {
@@ -64,4 +98,9 @@ public class HttpExecutor {
 
   static final MediaType MEDIA_TYPE =
       MediaType.get("application/x-www-form-urlencoded; charset=utf-8");
+
+  public static void shutDown() {
+    System.out.println("ShutDown ...");
+    threadExecutor.shutdown();
+  }
 }
