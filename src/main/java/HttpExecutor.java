@@ -1,3 +1,4 @@
+import lombok.NonNull;
 import lombok.experimental.UtilityClass;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -42,15 +43,23 @@ public class HttpExecutor {
             .build();
 
     try (Response response = client.newCall(request).execute()) {
-      if (!response.isSuccessful() || response.body() == null) {
-        System.out.println(response.code());
-        if (response.body() != null) {
-          System.out.println(response.body().string());
-        }
+      if (response == null || !response.isSuccessful()) {
         return Optional.empty();
       }
-      return Optional.ofNullable(response.body().string());
+      return Optional.ofNullable(consumeResponse(response));
     }
+  }
+
+  private static String consumeResponse(@NonNull Response response) throws IOException {
+    String body = response.body() == null ? "" : response.body().string();
+
+    System.out.println("Code: " + response.code());
+    if (response.headers() != null) System.out.println("Headers: " + response.headers().toString());
+    System.out.println("Body: " + body);
+    if (response.trailers() != null)
+      System.out.println("Trailers: " + response.trailers().toString());
+
+    return body;
   }
 
   static final MediaType MEDIA_TYPE =

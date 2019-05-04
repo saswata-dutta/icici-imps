@@ -6,7 +6,7 @@ public class Main {
     IciciConfig config = new IciciConfig("url", "bc", "pass", "remit-name", "remit-mobile");
 
     String transactionRef = UUID.randomUUID().toString().toUpperCase().replaceAll("-", "");
-    ImpsParams reqParams = new ImpsParams("acc", "ifsc", 1, transactionRef, "Dev test");
+    ImpsParams reqParams = new ImpsParams(args[0], args[1], 1, transactionRef, "Dev test");
 
     try {
       String transferResponse =
